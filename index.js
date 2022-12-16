@@ -195,7 +195,7 @@ async function replaceInner(path, element, isBlock = false) {
     const resp = await fetch(plainPath);
     if (!resp.ok) {
       console.log('error loading experiment content:', resp);
-      return null;
+      return false;
     }
     const html = await resp.text();
     if (isBlock) {
@@ -205,10 +205,11 @@ async function replaceInner(path, element, isBlock = false) {
     } else {
       element.innerHTML = html;
     }
+    return true;
   } catch (e) {
     console.log(`error loading experiment content: ${plainPath}`, e);
   }
-  return null;
+  return false;
 }
 
 async function runExperiment(config, plugins) {
@@ -243,9 +244,6 @@ async function runExperiment(config, plugins) {
     experimentConfig.selectedVariant = decision.items[0].id;
   }
 
-  if (plugins.rum) {
-    plugins.rum.sampleRUM('experiment', { source: experimentConfig.id, target: experimentConfig.selectedVariant });
-  }
   console.debug(`running experiment (${window.hlx.experiment.id}) -> ${window.hlx.experiment.selectedVariant}`);
 
   if (experimentConfig.selectedVariant === experimentConfig.variantNames[0]) {
@@ -266,8 +264,17 @@ async function runExperiment(config, plugins) {
 
   // Fullpage content experiment
   document.body.classList.add(`experiment-${experimentConfig.id}`);
-  document.body.classList.add(`variant-${experimentConfig.selectedVariant}`);
-  await replaceInner(content[0], document.querySelector('main'));
+  const resut = await replaceInner(content[0], document.querySelector('main'));
+  if (!resut) {
+    console.debug(`failed to serve variant ${window.hlx.experiment.selectedVariant}. Falling back to ${experimentConfig.variantNames[0]}.`);
+  }
+  document.body.classList.add(`variant-${resut ? experimentConfig.selectedVariant : experimentConfig.variantNames[0]}`);
+  if (plugins.rum) {
+    plugins.rum.sampleRUM('experiment', {
+      source: experimentConfig.id,
+      target: resut ? experimentConfig.selectedVariant : experimentConfig.variantNames[0],
+    });
+  }
 }
 
 export function patchBlockConfig(config) {
