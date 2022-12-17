@@ -9,13 +9,8 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import {
-  getMetadata,
-  toCamelCase,
-  toClassName,
-} from '/scripts/lib-franklin.js';
 
-const DEFAULT_OPTIONS = {
+export const DEFAULT_OPTIONS = {
   basePath: '/experiments',
   configFile: 'manifest.json',
   metaTag: 'experiment',
@@ -37,8 +32,8 @@ const DEFAULT_OPTIONS = {
  *          [variantName]: {
  *            label: <string>
  *            percentageSplit: <number 0-1>,
- *            content: <string>,
- *            code: <string>,
+ *            pages: <string>,
+ *            blocks: <string>,
  *          }
  *        }
  *      };
@@ -46,35 +41,41 @@ const DEFAULT_OPTIONS = {
 function parseExperimentConfig(json) {
   const config = {};
   try {
-    json.settings.data.forEach((row) => {
-      const prop = toCamelCase(row.Name);
-      if (['audience', 'status'].includes(prop)) {
-        config[prop] = row.Value;
-      } else if (prop === 'experimentName') {
-        config.label = row.Value;
-      } else if (prop === 'blocks') {
-        config[prop] = row.Value.split(/[,\n]/);
-      }
+    json.settings.data.forEach((line) => {
+      const key = this.toCamelCase(line.Name);
+      config[key] = line.Value;
     });
-
-    config.variantNames = [];
-    config.variants = {};
-    json.variants.data.forEach((row) => {
-      const {
-        Name, Label, Split, Pages, Blocks,
-      } = row;
-      const variantName = toCamelCase(Name);
-      config.variantNames.push(variantName);
-      config.variants[variantName] = {
-        label: Label,
-        percentageSplit: Split,
-        content: Pages ? Pages.trim().split(',') : [],
-        code: Blocks ? Blocks.trim().split(',') : [],
-      };
+    const variants = {};
+    let variantNames = Object.keys(json.experiences.data[0]);
+    variantNames.shift();
+    variantNames = variantNames.map((vn) => this.toCamelCase(vn));
+    variantNames.forEach((variantName) => {
+      variants[variantName] = {};
     });
+    let lastKey = 'default';
+    json.experiences.data.forEach((line) => {
+      let key = this.toCamelCase(line.Name);
+      if (!key) key = lastKey;
+      lastKey = key;
+      const vns = Object.keys(line);
+      vns.shift();
+      vns.forEach((vn) => {
+        const camelVN = this.toCamelCase(vn);
+        if (key === 'pages' || key === 'blocks') {
+          variants[camelVN][key] = variants[camelVN][key] || [];
+          if (key === 'pages') variants[camelVN][key].push(new URL(line[vn]).pathname);
+          else variants[camelVN][key].push(line[vn]);
+        } else {
+          variants[camelVN][key] = line[vn];
+        }
+      });
+    });
+    config.variants = variants;
+    config.variantNames = variantNames;
     return config;
   } catch (e) {
-    console.log('error parsing experiment config:', e);
+    // eslint-disable-next-line no-console
+    console.log('error parsing experiment config:', e, json);
   }
   return null;
 }
@@ -88,20 +89,73 @@ export function getExperiment(tagName) {
     return null;
   }
 
-  return toClassName(getMetadata(tagName)) || null;
+  return this.toClassName(this.getMetadata(tagName)) || null;
 }
 
 function validateConfig(config) {
   if (!config.variantNames
+    || !config.variantNames.length
     || !config.variants
+    || !Object.values(config.variants).length
     || !Object.values(config.variants).every((v) => (
       typeof v === 'object'
-      && !!v.code
-      && !!v.content
+      && !!v.blocks
+      && !!v.pages
       && (v.percentageSplit === '' || !!v.percentageSplit)
     ))) {
     throw new Error('Invalid experiment config. Please review your sheet and parser.');
   }
+}
+
+/**
+ * Gets experiment config from the manifest and transforms it to more easily
+ * consumable structure.
+ *
+ * the manifest consists of two sheets "settings" and "experiences", by default
+ *
+ * "settings" is applicable to the entire test and contains information
+ * like "Audience", "Status" or "Blocks".
+ *
+ * "experience" hosts the experiences in rows, consisting of:
+ * a "Percentage Split", "Label" and a set of "Links".
+ *
+ *
+ * @param {string} experimentId
+ * @param {object} cfg
+ * @returns {object} containing the experiment manifest
+ */
+export function getInstantExperimentConfig(experimentId, instantExperiment) {
+  const config = {
+    label: `Instant Experiment: ${experimentId}`,
+    audience: '',
+    status: 'Active',
+    id: experimentId,
+    variants: {},
+    variantNames: [],
+  };
+
+  const pages = instantExperiment.split(',').map((p) => new URL(p.trim()).pathname);
+  const evenSplit = 1 / (pages.length + 1);
+
+  config.variantNames.push('control');
+  config.variants.control = {
+    percentageSplit: '',
+    pages: [window.location.pathname],
+    blocks: [],
+    label: 'Control',
+  };
+
+  pages.forEach((page, i) => {
+    const vname = `challenger-${i + 1}`;
+    config.variantNames.push(vname);
+    config.variants[vname] = {
+      percentageSplit: `${evenSplit.toFixed(2)}`,
+      pages: [page],
+      label: `Challenger ${i + 1}`,
+    };
+  });
+
+  return (config);
 }
 
 /**
@@ -130,7 +184,12 @@ export async function getExperimentConfig(experimentId, cfg) {
       return null;
     }
     const json = await resp.json();
-    const config = cfg.parser ? cfg.parser(json) : parseExperimentConfig(json);
+    const config = cfg.parser
+      ? cfg.parser.call(this, json)
+      : parseExperimentConfig.call(this, json);
+    if (!config) {
+      return null;
+    }
     validateConfig(config);
     config.id = experimentId;
     config.manifest = path;
@@ -158,6 +217,7 @@ function getDecisionPolicy(config) {
           allocationPercentage: props.percentageSplit
             ? parseFloat(props.percentageSplit) * 100
             : 100 - Object.values(config.variants).reduce((result, variant) => {
+              // eslint-disable-next-line no-param-reassign
               result -= parseFloat(variant.percentageSplit || 0) * 100;
               return result;
             }, 100),
@@ -203,6 +263,7 @@ async function replaceInner(path, element, isBlock = false) {
       div.innerHTML = html;
       element.replaceWith(div.children[0].children[0]);
     } else {
+      // eslint-disable-next-line no-param-reassign
       element.innerHTML = html;
     }
     return true;
@@ -212,23 +273,20 @@ async function replaceInner(path, element, isBlock = false) {
   return false;
 }
 
-async function runExperiment(config, plugins) {
-  const experiment = getExperiment(config.metaTag);
-  if (!experiment) {
-    return;
-  }
-
+export async function runExperiment(experiment, instantExperiment, config) {
   const usp = new URLSearchParams(window.location.search);
   const [forcedExperiment, forcedVariant] = usp.has(config.queryParameter) ? usp.get(config.queryParameter).split('/') : [];
 
-  const experimentConfig = await getExperimentConfig(experiment, config);
+  const experimentConfig = instantExperiment
+    ? await getInstantExperimentConfig.call(this, experiment, instantExperiment)
+    : await getExperimentConfig.call(this, experiment, config);
   console.debug(experimentConfig);
-  if (!experimentConfig || (toCamelCase(experimentConfig.status) !== 'active' && !forcedExperiment)) {
+  if (!experimentConfig || (this.toCamelCase(experimentConfig.status) !== 'active' && !forcedExperiment)) {
     return;
   }
 
   experimentConfig.run = forcedExperiment
-    || isValidAudience(toClassName(experimentConfig.audience));
+    || isValidAudience(this.toClassName(experimentConfig.audience));
   window.hlx = window.hlx || {};
   window.hlx.experiment = experimentConfig;
   console.debug('run', experimentConfig.run, experimentConfig.audience);
@@ -239,6 +297,7 @@ async function runExperiment(config, plugins) {
   if (forcedVariant && experimentConfig.variantNames.includes(forcedVariant)) {
     experimentConfig.selectedVariant = forcedVariant;
   } else {
+    // eslint-disable-next-line import/extensions
     const { evaluateDecisionPolicy } = await import('./ued.js');
     const decision = evaluateDecisionPolicy(getDecisionPolicy(experimentConfig), {});
     experimentConfig.selectedVariant = decision.items[0].id;
@@ -251,26 +310,26 @@ async function runExperiment(config, plugins) {
   }
 
   const currentPath = window.location.pathname;
-  const { content } = experimentConfig.variants[experimentConfig.selectedVariant];
-  if (!content.length) {
+  const { pages } = experimentConfig.variants[experimentConfig.selectedVariant];
+  if (!pages.length) {
     return;
   }
 
   const control = experimentConfig.variants[experimentConfig.variantNames[0]];
-  const index = control.content.indexOf(currentPath);
-  if (index < 0 || content[index] === currentPath) {
+  const index = control.pages.indexOf(currentPath);
+  if (index < 0 || pages[index] === currentPath) {
     return;
   }
 
   // Fullpage content experiment
   document.body.classList.add(`experiment-${experimentConfig.id}`);
-  const resut = await replaceInner(content[0], document.querySelector('main'));
+  const resut = await replaceInner(pages[0], document.querySelector('main'));
   if (!resut) {
     console.debug(`failed to serve variant ${window.hlx.experiment.selectedVariant}. Falling back to ${experimentConfig.variantNames[0]}.`);
   }
   document.body.classList.add(`variant-${resut ? experimentConfig.selectedVariant : experimentConfig.variantNames[0]}`);
-  if (plugins.rum) {
-    plugins.rum.sampleRUM('experiment', {
+  if (this.plugins.rum) {
+    this.plugins.rum.sampleRUM('experiment', {
       source: experimentConfig.id,
       target: resut ? experimentConfig.selectedVariant : experimentConfig.variantNames[0],
     });
@@ -293,16 +352,16 @@ export function patchBlockConfig(config) {
 
   // The current experiment does not modify the block code
   const variant = experiment.variants[experiment.selectedVariant];
-  if (!variant.code.length) {
+  if (!variant.blocks.length) {
     return config;
   }
 
-  let index = experiment.variants[experiment.variantNames[0]].code.indexOf('');
+  let index = experiment.variants[experiment.variantNames[0]].blocks.indexOf('');
   if (index < 0) {
-    index = experiment.variants[experiment.variantNames[0]].code.indexOf(config.blockName);
+    index = experiment.variants[experiment.variantNames[0]].blocks.indexOf(config.blockName);
   }
   if (index < 0) {
-    index = experiment.variants[experiment.variantNames[0]].code.indexOf(`/blocks/${config.blockName}`);
+    index = experiment.variants[experiment.variantNames[0]].blocks.indexOf(`/blocks/${config.blockName}`);
   }
   if (index < 0) {
     return config;
@@ -310,8 +369,8 @@ export function patchBlockConfig(config) {
 
   let origin = '';
   let path;
-  if (/^https?:\/\//.test(variant.code[index])) {
-    const url = new URL(variant.code[index]);
+  if (/^https?:\/\//.test(variant.blocks[index])) {
+    const url = new URL(variant.blocks[index]);
     // Experimenting from a different branch
     if (url.origin !== window.location.origin) {
       origin = url.origin;
@@ -323,7 +382,7 @@ export function patchBlockConfig(config) {
       path = `/blocks/${config.blockName}`;
     }
   } else { // Experimenting from a different branch on the same branch
-    path = variant.code[index];
+    path = variant.blocks[index];
   }
   if (!origin && !path) {
     return config;
@@ -337,17 +396,21 @@ export function patchBlockConfig(config) {
   };
 }
 
-export async function preEager(customOptions, plugins) {
+export async function preEager(customOptions) {
   const options = {
     ...DEFAULT_OPTIONS,
     ...customOptions,
   };
-  await runExperiment(options, plugins);
+  const experiment = this.getMetadata('experiment');
+  const instantExperiment = this.getMetadata('instant-experiment');
+  if (instantExperiment || experiment) {
+    await runExperiment.call(this, experiment, instantExperiment, options);
+  }
 }
 
 export async function postLazy(options) {
   if (window.location.hostname.endsWith('hlx.page') || window.location.hostname === ('localhost')) {
-    // eslint-disable-next-line import/no-cycle
+    // eslint-disable-next-line import/extensions
     const preview = await import('./preview.js');
     preview.default(options);
   }
