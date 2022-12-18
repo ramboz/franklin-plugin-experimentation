@@ -225,10 +225,6 @@ async function createExperiment() {
  * Decorates Preview mode badges and overlays
  * @return {Object} returns a badge or empty string
  */
-async function decoratePreviewMode() {
-  
-}
-
 export default async function decoratePreviewMode(options) {
   try {
     loadCSS(`${options.basePath}/preview.css`);

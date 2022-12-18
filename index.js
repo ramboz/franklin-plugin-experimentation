@@ -84,7 +84,7 @@ function parseExperimentConfig(json) {
  * Gets the experiment name, if any for the page based on env, useragent, queyr params
  * @returns {string} experimentid
  */
-export function getExperiment(tagName) {
+export function getExperimentName(tagName) {
   if (navigator.userAgent.match(/bot|crawl|spider/i)) {
     return null;
   }
@@ -92,7 +92,7 @@ export function getExperiment(tagName) {
   return this.toClassName(this.getMetadata(tagName)) || null;
 }
 
-function validateConfig(config) {
+export function isValidConfig(config) {
   if (!config.variantNames
     || !config.variantNames.length
     || !config.variants
@@ -103,8 +103,10 @@ function validateConfig(config) {
       && !!v.pages
       && (v.percentageSplit === '' || !!v.percentageSplit)
     ))) {
-    throw new Error('Invalid experiment config. Please review your sheet and parser.');
+    console.warn('Invalid experiment config. Please review your sheet and parser.');
+    return false;
   }
+  return true;
 }
 
 /**
@@ -124,7 +126,7 @@ function validateConfig(config) {
  * @param {object} cfg
  * @returns {object} containing the experiment manifest
  */
-export function getInstantExperimentConfig(experimentId, instantExperiment) {
+export function getConfigForInstantExperiment(experimentId, instantExperiment) {
   const config = {
     label: `Instant Experiment: ${experimentId}`,
     audience: '',
@@ -175,7 +177,7 @@ export function getInstantExperimentConfig(experimentId, instantExperiment) {
  * @param {object} cfg
  * @returns {object} containing the experiment manifest
  */
-export async function getExperimentConfig(experimentId, cfg) {
+export async function getConfigForFullExperiment(experimentId, cfg) {
   const path = `${cfg.basePath}/${experimentId}/${cfg.configFile}`;
   try {
     const resp = await fetch(path);
@@ -190,7 +192,6 @@ export async function getExperimentConfig(experimentId, cfg) {
     if (!config) {
       return null;
     }
-    validateConfig(config);
     config.id = experimentId;
     config.manifest = path;
     config.basePath = `${cfg.basePath}/${experimentId}`;
@@ -249,7 +250,7 @@ function isValidAudience(audience) {
  * @param {HTMLElement} element
  * @param {boolean} isBlock
  */
-async function replaceInner(path, element, isBlock = false) {
+async function replaceInner(path, element) {
   const plainPath = `${path}.plain.html`;
   try {
     const resp = await fetch(plainPath);
@@ -258,14 +259,8 @@ async function replaceInner(path, element, isBlock = false) {
       return false;
     }
     const html = await resp.text();
-    if (isBlock) {
-      const div = document.createElement('div');
-      div.innerHTML = html;
-      element.replaceWith(div.children[0].children[0]);
-    } else {
-      // eslint-disable-next-line no-param-reassign
-      element.innerHTML = html;
-    }
+    // eslint-disable-next-line no-param-reassign
+    element.innerHTML = html;
     return true;
   } catch (e) {
     console.log(`error loading experiment content: ${plainPath}`, e);
@@ -273,52 +268,55 @@ async function replaceInner(path, element, isBlock = false) {
   return false;
 }
 
-export async function runExperiment(experiment, instantExperiment, config) {
+export async function getConfig(experiment, instantExperiment, config) {
   const usp = new URLSearchParams(window.location.search);
   const [forcedExperiment, forcedVariant] = usp.has(config.queryParameter) ? usp.get(config.queryParameter).split('/') : [];
 
   const experimentConfig = instantExperiment
-    ? await getInstantExperimentConfig.call(this, experiment, instantExperiment)
-    : await getExperimentConfig.call(this, experiment, config);
+    ? await getConfigForInstantExperiment.call(this, experiment, instantExperiment)
+    : await getConfigForFullExperiment.call(this, experiment, config);
   console.debug(experimentConfig);
   if (!experimentConfig || (this.toCamelCase(experimentConfig.status) !== 'active' && !forcedExperiment)) {
-    return;
+    return null;
   }
 
-  experimentConfig.run = forcedExperiment
+  experimentConfig.run = !!forcedExperiment
     || isValidAudience(this.toClassName(experimentConfig.audience));
   window.hlx = window.hlx || {};
   window.hlx.experiment = experimentConfig;
   console.debug('run', experimentConfig.run, experimentConfig.audience);
   if (!experimentConfig.run) {
-    return;
+    return null;
   }
 
   if (forcedVariant && experimentConfig.variantNames.includes(forcedVariant)) {
     experimentConfig.selectedVariant = forcedVariant;
   } else {
     // eslint-disable-next-line import/extensions
-    const { evaluateDecisionPolicy } = await import('./ued.js');
-    const decision = evaluateDecisionPolicy(getDecisionPolicy(experimentConfig), {});
+    const { ued } = await import('./ued.js');
+    const decision = ued.evaluateDecisionPolicy(getDecisionPolicy(experimentConfig), {});
     experimentConfig.selectedVariant = decision.items[0].id;
   }
+  return experimentConfig;
+}
 
+export async function runExperiment(experimentConfig) {
   console.debug(`running experiment (${window.hlx.experiment.id}) -> ${window.hlx.experiment.selectedVariant}`);
 
   if (experimentConfig.selectedVariant === experimentConfig.variantNames[0]) {
-    return;
+    return false;
+  }
+
+  const { pages } = experimentConfig.variants[experimentConfig.selectedVariant];
+  if (!pages.length) {
+    return false;
   }
 
   const currentPath = window.location.pathname;
-  const { pages } = experimentConfig.variants[experimentConfig.selectedVariant];
-  if (!pages.length) {
-    return;
-  }
-
   const control = experimentConfig.variants[experimentConfig.variantNames[0]];
   const index = control.pages.indexOf(currentPath);
   if (index < 0 || pages[index] === currentPath) {
-    return;
+    return false;
   }
 
   // Fullpage content experiment
@@ -334,6 +332,7 @@ export async function runExperiment(experiment, instantExperiment, config) {
       target: resut ? experimentConfig.selectedVariant : experimentConfig.variantNames[0],
     });
   }
+  return resut;
 }
 
 export function patchBlockConfig(config) {
@@ -396,19 +395,27 @@ export function patchBlockConfig(config) {
   };
 }
 
-export async function preEager(customOptions) {
+export async function preEager(customOptions = {}) {
   const options = {
     ...DEFAULT_OPTIONS,
     ...customOptions,
   };
-  const experiment = this.getMetadata('experiment');
+  const experiment = getExperimentName.call(this, options.metaTag);
   const instantExperiment = this.getMetadata('instant-experiment');
   if (instantExperiment || experiment) {
-    await runExperiment.call(this, experiment, instantExperiment, options);
+    const config = await getConfig.call(this, experiment, instantExperiment, options);
+    if (!config || !isValidConfig(config)) {
+      return;
+    }
+    await runExperiment.call(this, config);
   }
 }
 
-export async function postLazy(options) {
+export async function postLazy(customOptions = {}) {
+  const options = {
+    ...DEFAULT_OPTIONS,
+    ...customOptions,
+  };
   if (window.location.hostname.endsWith('hlx.page') || window.location.hostname === ('localhost')) {
     // eslint-disable-next-line import/extensions
     const preview = await import('./preview.js');
