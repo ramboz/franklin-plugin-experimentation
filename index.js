@@ -22,10 +22,11 @@ export const DEFAULT_OPTIONS = {
  *
  * Output model is expected to have the following structure:
  *      {
+ *        id: <string>,
  *        label: <string>,
  *        blocks: [<string>]
  *        audience: Desktop | Mobile,
- *        status: Active | On | True | Yes,
+ *        status: Active | Inactive,
  *        variantNames: [<string>],
  *        variants: {
  *          [variantName]: {
