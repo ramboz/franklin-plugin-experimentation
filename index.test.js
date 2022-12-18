@@ -53,7 +53,6 @@ describe('Experimentation Plugin', () => {
         configFile: 'manifest.json',
         metaTag: 'experiment',
         queryParameter: 'experiment',
-        storeKey: 'hlx-experiments',
       });
     });
   });

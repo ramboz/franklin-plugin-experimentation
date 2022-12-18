@@ -15,7 +15,6 @@ export const DEFAULT_OPTIONS = {
   configFile: 'manifest.json',
   metaTag: 'experiment',
   queryParameter: 'experiment',
-  storeKey: 'hlx-experiments',
 };
 
 /**
@@ -326,7 +325,7 @@ export async function runExperiment(experimentConfig) {
     console.debug(`failed to serve variant ${window.hlx.experiment.selectedVariant}. Falling back to ${experimentConfig.variantNames[0]}.`);
   }
   document.body.classList.add(`variant-${resut ? experimentConfig.selectedVariant : experimentConfig.variantNames[0]}`);
-  if (this.plugins.rum) {
+  if (this.plugins && this.plugins.rum) {
     this.plugins.rum.sampleRUM('experiment', {
       source: experimentConfig.id,
       target: resut ? experimentConfig.selectedVariant : experimentConfig.variantNames[0],
