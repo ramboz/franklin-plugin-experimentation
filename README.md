@@ -91,7 +91,7 @@ by making sure you place the fist block that runs the experiment as early in the
 
 | Name | Default | Type | Description |
 |-|-|-|-|
-| `basePath` | `experiments` | `string` | The base path for full experiments in your Google Drive/Sharepoint
+| `root` | `/experiments` | `string` | The root path for full experiments in your Google Drive/Sharepoint
 | `configFile` | `manifest.json` | `string` | The name for the full experiment manifest endpoint
 | `metaTag` | `experiment` | `string` | The name of the meta tag that contains the experiment name
 | `queryParameter` | `experiment` | `string` | The name of the query parameter that is used to override the current experiment and variant
@@ -99,7 +99,7 @@ by making sure you place the fist block that runs the experiment as early in the
 You'd use those as follows:
 ```js
 await withPlugin('/plugins/experimentation/index.js', {
-  basePath: '/experiments',
+  root: '/experiments',
   configFile: 'manifest.json',
   metaTag: 'experiment',
   queryParameter: 'experiment',

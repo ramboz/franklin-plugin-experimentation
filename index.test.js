@@ -49,7 +49,7 @@ describe('Experimentation Plugin', () => {
   describe('#DEFAULT_OPTIONS', () => {
     it('set default options for the plugin', () => {
       expect(DEFAULT_OPTIONS).to.eql({
-        basePath: '/experiments',
+        root: '/experiments',
         configFile: 'manifest.json',
         metaTag: 'experiment',
         queryParameter: 'experiment',

@@ -11,7 +11,7 @@
  */
 
 export const DEFAULT_OPTIONS = {
-  basePath: '/experiments',
+  root: '/experiments',
   configFile: 'manifest.json',
   metaTag: 'experiment',
   queryParameter: 'experiment',
@@ -178,7 +178,7 @@ export function getConfigForInstantExperiment(experimentId, instantExperiment) {
  * @returns {object} containing the experiment manifest
  */
 export async function getConfigForFullExperiment(experimentId, cfg) {
-  const path = `${cfg.basePath}/${experimentId}/${cfg.configFile}`;
+  const path = `${cfg.root}/${experimentId}/${cfg.configFile}`;
   try {
     const resp = await fetch(path);
     if (!resp.ok) {
@@ -194,7 +194,7 @@ export async function getConfigForFullExperiment(experimentId, cfg) {
     }
     config.id = experimentId;
     config.manifest = path;
-    config.basePath = `${cfg.basePath}/${experimentId}`;
+    config.basePath = `${cfg.root}/${experimentId}`;
     return config;
   } catch (e) {
     console.log(`error loading experiment manifest: ${path}`, e);
@@ -412,13 +412,14 @@ export async function preEager(customOptions = {}) {
 }
 
 export async function postLazy(customOptions = {}) {
+  const { basePath } = customOptions;
   const options = {
     ...DEFAULT_OPTIONS,
     ...customOptions,
   };
   if (window.location.hostname.endsWith('hlx.page') || window.location.hostname === ('localhost')) {
     // eslint-disable-next-line import/extensions
-    const preview = await import('./preview.js');
+    const preview = await import(`${basePath}/preview.js`);
     preview.default(options);
   }
 }
