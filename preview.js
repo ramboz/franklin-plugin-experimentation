@@ -89,7 +89,7 @@ async function createExperiment() {
     <div class="hlx-popup-header">
       <div>
         <h4>${config.label}</h4>
-        <div class="hlx-details">${config.status}${config.audience ? ', ' : ''}${config.audience}${config.variants[config.variantNames[0]].code.length ? ', Blocks: ' : ''}${config.variants[config.variantNames[0]].code.join(',')}</div>
+        <div class="hlx-details">${config.status}${config.audience ? ', ' : ''}${config.audience}${config.variants[config.variantNames[0]].blocks.length ? ', Blocks: ' : ''}${config.variants[config.variantNames[0]].blocks.join(',')}</div>
         <div class="hlx-info">How is it going?</div>
       </div>
       <div>
