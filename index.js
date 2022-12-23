@@ -395,7 +395,7 @@ export function patchBlockConfig(config) {
   };
 }
 
-export async function preEager(customOptions = {}) {
+export async function preEager(doc, customOptions = {}) {
   const options = {
     ...DEFAULT_OPTIONS,
     ...customOptions,
@@ -411,7 +411,7 @@ export async function preEager(customOptions = {}) {
   }
 }
 
-export async function postLazy(customOptions = {}) {
+export async function postLazy(doc, customOptions = {}) {
   const { basePath } = customOptions;
   const options = {
     ...DEFAULT_OPTIONS,
