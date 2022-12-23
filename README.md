@@ -8,6 +8,8 @@ It supports the following use cases:
 
 ![](./docs/screenshot.png)
 
+See it in action at https://plugins-experimentation--helix-project-boilerplate--ramboz.hlx.live/franklin-experiments/fullpage-content/demo
+
 ## Install
 
 ### Via the boilerplate
