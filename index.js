@@ -417,9 +417,9 @@ export async function postLazy(doc, customOptions = {}) {
     ...DEFAULT_OPTIONS,
     ...customOptions,
   };
-  if (window.location.hostname.endsWith('hlx.page') || window.location.hostname === ('localhost')) {
+  if (this.plugins.preview) {
     // eslint-disable-next-line import/extensions
     const preview = await import(`${basePath}/preview.js`);
-    preview.default(options);
+    preview.default.call(this, options);
   }
 }

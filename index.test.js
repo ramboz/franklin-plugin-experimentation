@@ -23,7 +23,6 @@ import {
   isValidConfig,
   patchBlockConfig,
   preEager,
-  postLazy,
   runExperiment,
 } from './index';
 import { ued } from './ued';

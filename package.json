@@ -3,9 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "lint:js": "eslint .",
-    "lint:css": "stylelint .",
-    "lint": "npm run lint:js && npm run lint:css",
+    "lint": "eslint .",
     "test": "wtr *.test.js --node-resolve"
   },
   "repository": {
